@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Generator KPJ</title>
+<style>
+  body { font-family: "Poppins", sans-serif; background-color:#f8fafc; margin:0; padding:0; display:flex; flex-direction:column; align-items:center;}
+  h1 { color:#2563eb; margin-top:30px; }
+  .card { background:#fff; padding:20px; border-radius:16px; box-shadow:0 2px 6px rgba(0,0,0,0.1); max-width:380px; width:90%; margin-top:10px;}
+  label{font-weight:500; display:block; margin-top:10px;}
+  input{width:100%; padding:8px; margin-top:5px; border-radius:8px; border:1px solid #ccc;}
+  .btn-row{display:flex; justify-content:space-between; margin-top:15px;}
+  button{border:none; border-radius:8px; padding:10px 16px; color:#fff; font-weight:600; cursor:pointer;}
+  #generate { background-color:#2563eb; }
+  #clear { background-color:#6b7280; }
+  #save { background-color:#10b981; width:100%; margin-top:10px; }
+  table{border-collapse:collapse; width:90%; margin-top:20px; max-width:500px;}
+  th, td{border:1px solid #ccc; padding:8px;}
+  th{background-color:#e2e8f0; text-align:center;}
+  td:first-child{ text-align:center; width:60px; }
+  td:last-child{ text-align:left; }
+  tr:nth-child(even){ background-color:#f1f5f9; }
+</style>
+</head>
+<body>
+  <h1>GENERATOR KPJ</h1>
+  <div class="card">
+    <label>Masukkan 10 digit (utama)</label>
+    <input id="angkaUtama" maxlength="10" placeholder="mis: 1234567890" />
+    <label>Masukkan 1 digit (terakhir)</label>
+    <input id="angkaTambahan" maxlength="1" placeholder="0-9" />
+    <label>Quantity</label>
+    <input id="quantity" type="number" min="1" value="10" />
+    <div class="btn-row">
+      <button id="generate">Generate</button>
+      <button id="clear">Clear</button>
+    </div>
+    <button id="save">Save (.xlsx)</button>
+  </div>
+
+  <table id="hasilTable">
+    <thead><tr><th>No</th><th>KPJ</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+<!-- XLSX dari CDN -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+function generateDeret() {
+  const utama = document.getElementById('angkaUtama').value.trim();
+  const tambahanStr = document.getElementById('angkaTambahan').value.trim();
+  const qtyStr = document.getElementById('quantity').value.trim();
+  const tbody = document.querySelector('#hasilTable tbody');
+  tbody.innerHTML = '';
+
+  if (!/^\d{10}$/.test(utama)) {
+    return alert("Kolom 'Masukkan 10 digit (utama)' harus berisi tepat 10 angka.");
+  }
+  if (!/^\d{1}$/.test(tambahanStr)) {
+    return alert("Kolom 'Masukkan 1 digit (terakhir)' harus berisi 1 angka.");
+  }
+  const tambahanAwal = parseInt(tambahanStr, 10);
+  const qty = parseInt(qtyStr, 10);
+  if (isNaN(qty) || qty <= 0) return alert("Masukkan quantity yang valid (>=1).");
+
+  let hasil = [];
+  let tambahan = tambahanAwal;
+  const prefix = utama.slice(0,4);
+  let angka = parseInt(utama.slice(-6), 10); // 6 digit terakhir sebagai angka awal
+
+  for (let i=1; i<=qty; i++) {
+    angka++;
+    if (angka > 999999) {
+      // jika overflow 6 digit, hentikan
+      break;
+    }
+
+    const last1 = angka % 10;
+    const last3 = angka % 1000;
+    const last4 = angka % 10000;
+
+    if ([0,1000,2000,3000,4000,5000,6000,7000,8000,9000].includes(last4)) {
+      tambahan = (tambahan + 6) % 10;
+    } else if ([0,100,200,300,400,600,700,800,900].includes(last3)) {
+      tambahan = (tambahan + 6) % 10;
+    } else if (last3 === 500) {
+      tambahan = (tambahan + 5) % 10;
+    } else if (last1 === 5) {
+      tambahan = (tambahan + 7) % 10;
+    } else if ([0,1,2,3,4,6,7,8,9].includes(last1)) {
+      tambahan = (tambahan + 8) % 10;
+    }
+
+    const gabungan = prefix + angka.toString().padStart(6, '0') + tambahan.toString();
+    hasil.push([i, gabungan]);
+  }
+
+  hasil.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function clearAll() {
+  document.getElementById('angkaUtama').value='';
+  document.getElementById('angkaTambahan').value='';
+  document.getElementById('quantity').value='1';
+  document.querySelector('#hasilTable tbody').innerHTML='';
+}
+
+function saveExcel() {
+  const rows = [["No","KPJ"]];
+  document.querySelectorAll('#hasilTable tbody tr').forEach(tr=>{
+    const cols = tr.querySelectorAll('td');
+    rows.push([cols[0].innerText, cols[1].innerText]);
+  });
+  if (rows.length <= 1) { alert("Belum ada data!"); return; }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Deret KPJ");
+
+  // write sebagai base64 (agar dapat dikirim ke native Android)
+  const base64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+
+  // tanya nama file
+  const fileName = prompt("Simpan sebagai:", "Hasil_Generator_KPJ.xlsx");
+  if (!fileName) return;
+
+  // panggil fungsi Android native (harus di-provide oleh aplikasi Android)
+  if (window.Android && typeof window.Android.saveFile === 'function') {
+    window.Android.saveFile(base64, fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx');
+  } else {
+    // fallback: buat link download — kemungkinan besar tidak bekerja di WebView Android
+    const link = document.createElement("a");
+    link.href = "data:application/octet-stream;base64," + base64;
+    link.download = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+    link.click();
+    alert("Jika Anda berada di WebView Android dan file tidak terunduh, gunakan mode aplikasi native (lihat panduan).");
+  }
+}
+
+document.getElementById('generate').onclick = generateDeret;
+document.getElementById('clear').onclick = clearAll;
+document.getElementById('save').onclick = saveExcel;
+</script>
+</body>
+</html>
